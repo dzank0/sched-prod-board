@@ -10,9 +10,20 @@ h1 { margin: 0; font-size: 22px; }
 .row time { color: #555; font-variant-numeric: tabular-nums; }
 footer { color: #777; font-size: 13px; }
 .row .act { text-align: right; white-space: nowrap; }
-.row button[data-testid="ack"] { font: inherit; padding: 4px 14px; border: 1px solid #1d1d1f; border-radius: 6px; background: #fff; cursor: pointer; }
-.row button[data-testid="ack"]:disabled { opacity: .5; cursor: wait; }
+.row { cursor: pointer; }
+.row:hover { background: #f3f6ff; }
+.row:focus-visible { outline: 2px solid #2557d6; outline-offset: -2px; }
+.row[aria-selected="true"] { background: #e8eeff; box-shadow: inset 3px 0 0 #2557d6; }
 .row .acked { color: #1a7f37; font-weight: 600; }
 .row .acked time { font-weight: 400; color: #1a7f37; }
 .loader, .empty { margin: 12px 0; color: #666; }
 footer [data-testid="build-sha"] { font-family: ui-monospace, monospace; }
+.panel { position: fixed; top: 96px; right: 16px; width: 240px; padding: 14px 16px; background: #fff; border: 1px solid #d0d0d5; border-radius: 10px; box-shadow: 0 4px 18px rgba(0,0,0,.08); }
+.panel .p-head { display: flex; gap: 8px; align-items: baseline; }
+.panel .p-id { font-family: ui-monospace, monospace; font-size: 16px; }
+.panel .p-close { margin-left: auto; border: 0; background: none; font-size: 20px; line-height: 1; cursor: pointer; color: #666; }
+.panel p { margin: 8px 0; }
+.panel .p-ack { font: inherit; width: 100%; padding: 8px 12px; border: 1px solid #1d1d1f; border-radius: 6px; background: #1d1d1f; color: #fff; cursor: pointer; }
+.panel .p-ack:disabled { background: #fff; color: #1a7f37; border-color: #1a7f37; cursor: default; }
+.panel .p-state { color: #1a7f37; font-weight: 600; min-height: 1.2em; }
+@media (max-width: 1100px) { .panel { top: auto; bottom: 12px; right: 12px; left: 12px; width: auto; } }

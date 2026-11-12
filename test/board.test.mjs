@@ -13,7 +13,8 @@ import { formatLocal } from '../app/time.js';
 
 const root = new URL('..', import.meta.url).pathname;
 const cleanup = [];
-after(async () => { for (const f of cleanup) await f(); });
+// Chrome can stall on close; never let teardown hold the run (exit code comes from the tests).
+after(async () => { for (const f of cleanup) await Promise.race([f().catch(() => {}), new Promise((r) => setTimeout(r, 3000))]); });
 
 async function board(apiOpts = {}) {
   const api = await startFakeApi(apiOpts);
@@ -59,21 +60,65 @@ test('SCHED-4511 + 4513: a new incident shows at the top without a reload, newes
   assert.deepEqual(later.slice(later.length - before.length), before, 'older rows keep their order below');
 });
 
-test('SCHED-4511: Ack on a row acks that incident with the latest cursor, and the mark survives refreshes', async () => {
+test('Product decision: a row opens its incident panel; panel Ack acks that incident with the latest cursor; mark survives refreshes', async () => {
   const { api, browser, url } = await board({ addEveryMs: 1500 });
-  const page = await browser.newPage();
+  const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
   await page.goto(url);
   const row = page.locator('[data-testid="incident-row"][data-id="INC-1001"]');
   await row.waitFor();
-  await row.locator('[data-testid="ack"]').click();
+  assert.equal(await page.locator('[data-testid="incident-row"] [data-testid="ack"]').count(), 0, 'Ack left the rows');
+  assert.equal(await page.locator('[data-testid="incident-panel"]:visible').count(), 0, 'panel closed until a row is picked');
+  await row.click();
+  const panel = page.locator('[data-testid="incident-panel"]');
+  assert.match(await panel.innerText(), /INC-1001/);
+  await page.waitForTimeout(3000); // new rows land on top; the panel still names the same incident
+  assert.match(await panel.innerText(), /INC-1001/);
+  await page.locator('[data-testid="panel-ack"]').click();
   await row.locator('[data-testid="acked"]').waitFor();
-  assert.equal(api.acks.length, 1);
-  assert.equal(api.acks[0].id, 'INC-1001');
+  assert.deepEqual(api.acks.map((a) => a.id), ['INC-1001']);
   assert.equal(api.acks[0].cursor, api.acks[0].latest, 'ack sent with the latest cursor');
-  await page.waitForTimeout(4500); // two refreshes and new rows on top
+  await page.waitForTimeout(4500);
   assert.equal(await row.locator('[data-testid="acked"]').count(), 1);
-  assert.equal(await row.locator('[data-testid="ack"]').count(), 0);
   assert.equal(await page.locator('[data-testid="acked"]').count(), 1, 'no other row marked');
+  assert.ok(await page.locator('[data-testid="panel-ack"]').isDisabled(), 'panel shows it is acked');
+});
+
+test('Race, like a person: a row lands under a still pointer; the click only opens a panel that names the row now there, and Ack goes to the incident the panel names', async () => {
+  const { api, browser, url } = await board({ addEveryMs: 2500, initial: 4 });
+  const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+  await page.goto(url);
+  const third = page.locator('[data-testid="incident-row"]').nth(2);
+  await third.waitFor();
+  const meant = await third.getAttribute('data-id');
+  const box = await third.boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 8 });
+  const top = await page.locator('[data-testid="incident-row"]').first().getAttribute('data-id');
+  await page.waitForFunction((t) => document.querySelector('[data-testid="incident-row"]').dataset.id !== t, top, { timeout: 8000 });
+  await page.waitForTimeout(300);
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  assert.equal(api.acks.length, 0, 'a click on a row never acks');
+  const panel = page.locator('[data-testid="incident-panel"]');
+  const named = await panel.getAttribute('data-id');
+  assert.notEqual(named, meant, 'the row moved, so the panel names another incident');
+  assert.match(await panel.innerText(), new RegExp(named));
+  await page.locator(`[data-testid="incident-row"][data-id="${meant}"]`).click(); // the person reads the panel and re-picks
+  await page.locator('[data-testid="panel-ack"]').click();
+  await page.locator(`[data-testid="incident-row"][data-id="${meant}"] [data-testid="acked"]`).waitFor();
+  assert.deepEqual(api.acks.map((a) => a.id), [meant]);
+});
+
+test('Rows are never removed or re-created while they stay listed (watch for 6 s)', async () => {
+  const { browser, url } = await board({ addEveryMs: 1500 });
+  const page = await browser.newPage();
+  await page.addInitScript(() => {
+    window.__removed = 0;
+    new MutationObserver((rs) => { for (const r of rs) for (const n of r.removedNodes) if (n.nodeType === 1 && n.matches?.('[data-testid="incident-row"]')) window.__removed++; }).observe(document, { childList: true, subtree: true });
+  });
+  await page.goto(url);
+  await page.locator('[data-testid="incident-row"]').first().waitFor();
+  await page.locator('[data-testid="incident-row"]').nth(1).click();
+  await page.waitForTimeout(6000);
+  assert.equal(await page.evaluate(() => window.__removed), 0);
 });
 
 test('SCHED-4513: refresh every 2 s, never two requests at once', async () => {
@@ -127,7 +172,7 @@ test('R6 + hooks: build sha in meta and footer, every pinned hook present, text 
   const meta = await page.locator('meta[name="build"]').getAttribute('content');
   assert.equal(meta, 'dev');
   assert.equal(await page.locator('[data-testid="build-sha"]').textContent(), meta);
-  for (const h of ['board', 'incident-list', 'incident-row', 'ack', 'build-sha']) assert.ok(await page.locator(`[data-testid="${h}"]`).count() > 0, h);
+  for (const h of ['board', 'incident-list', 'incident-row', 'incident-panel', 'panel-ack', 'build-sha']) assert.ok(await page.locator(`[data-testid="${h}"]`).count() > 0, h);
   assert.equal(await page.evaluate(() => window.__xss), undefined);
   assert.ok((await page.locator('[data-testid="incident-row"][data-id="INC-1002"] .what').textContent()).includes('<img'));
 });

@@ -17,6 +17,13 @@
       <p data-testid="loader" class="loader" role="status">Loading incidents…</p>
       <ul data-testid="incident-list" class="list"></ul>
     </main>
+    <aside data-testid="incident-panel" class="panel" hidden aria-live="polite">
+      <div class="p-head"><strong class="p-id"></strong> <span class="p-sev"></span><button type="button" class="p-close" aria-label="Close panel">×</button></div>
+      <p class="p-what"></p>
+      <p>Opened <time class="p-time"></time></p>
+      <button type="button" data-testid="panel-ack" class="p-ack">Ack</button>
+      <p class="p-state"></p>
+    </aside>
     <footer>sched-prod incident board · build <span data-testid="build-sha">__BUILD_SHA__</span></footer>
   </body>
 </html>
